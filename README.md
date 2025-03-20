@@ -106,11 +106,11 @@ Now that we got some new lines inside `handle_connection` method, there are some
     let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
     ```
     Inside of the `format!` macro, there is:
-    1. **`{status_line}`**: Inserts the HTTP status line (`HTTP/1.1 200 OK`).
-    2. **`\r\n`**: Carriage return + newline (CRLF), separating headers and body according to the HTTP protocol.
-    3. **`Content-Length: {length}`**: Indicates the length of the content to be sent.
-    4. **`\r\n\r\n`**: Two blank lines separating the HTTP headers from the body.
-    5. **`{contents}`**: Inserts the actual HTML content.
+    - **`{status_line}`**: Inserts the HTTP status line (`HTTP/1.1 200 OK`).
+    - **`\r\n`**: Carriage return + newline (CRLF), separating headers and body according to the HTTP protocol.
+    - **`Content-Length: {length}`**: Indicates the length of the content to be sent.
+    - **`\r\n\r\n`**: Two blank lines separating the HTTP headers from the body.
+    - **`{contents}`**: Inserts the actual HTML content.
 
     Example of what the **response** will be:
     ```
