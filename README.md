@@ -126,3 +126,82 @@ Now that we got some new lines inside `handle_connection` method, there are some
     stream.write_all(response.as_bytes()).unwrap();
     ```
     In this line, **`response.as_bytes()`** converts the formatted HTTP response from a `String` to a byte slice (`&[u8]`), which is required for network transmission. After that, **`.write_all()`** will writes all the bytes to the client via the `TcpStream` and **`.unwrap()`** ensures any write errors (e.g., if the connection is lost) will results in `panic` to the program.
+
+<br>
+
+## Commit (3) Reflection
+
+Here is the image:
+
+![Commit 2 screen capture](/assets/commit3.png)
+
+### What is Inside the `handle_connection` Method Now?
+
+After further addition and refactor to the `handle_connection` method, now the method has a split condition on how to handle between difference response. 
+```rust
+fn handle_connection(mut stream: TcpStream) {
+    let buf_reader = BufReader::new(&stream);
+    let request_line = buf_reader.lines().next().unwrap().unwrap();
+
+    if request_line == "GET / HTTP/1.1" {
+        let status_line = "HTTP/1.1 200 OK";
+        let contents = fs::read_to_string("hello.html").unwrap();
+        let length = contents.len();
+
+        let response = format!(
+            "{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}"
+        );
+
+        stream.write_all(response.as_bytes()).unwrap();
+    } else {
+        let status_line = "HTTP/1.1 404 NOT FOUND";
+        let contents = fs::read_to_string("404.html").unwrap();
+        let length = contents.len();
+
+        let response = format!(
+            "{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}"
+        );
+
+        stream.write_all(response.as_bytes()).unwrap();
+    }
+}
+```
+With this code, the program can now **distinguish between valid and invalid requests** by checking the content of the incoming HTTP request. This changes ensure that if the `request_line` matches `"GET / HTTP/1.1"`, it means the client is requesting the home page (`/`), which indicate that the server should responds with `HTTP/1.1 200 OK` status and HTML from `hello.html` as a success GET response.
+
+If the `request_line` does not match `"GET / HTTP/1.1"`, the server assumes the client requested an invalid page (e.g., `/foo`, `/bad`, etc.). In that case, the server will responds with `HTTP/1.1 404 NOT FOUND` status and HTML from `404.html` as a `404 Not Found` error.
+
+In this version, I also removed this part of the `handle_connection` method.
+```rust
+let http_request: Vec<_> = buf_reader
+    .lines()
+    .map(|result| result.unwrap())
+    .take_while(|line| !line.is_empty())
+    .collect();
+```
+The removal of this part of the code based on its relevance to the method's purposes. Since we don't need to show the HTTP request in our terminal (where we returns an HTML response instead now), Keeping this part will be unnecessary. This part also shows a warning for `use of moved value`, which make the refactor even more essential.
+
+### Is There Something You Can Improve?
+
+After implementing the splitting method, I realized that the `if` and `else` blocks have a lot of repetition. They’re both reading files and writing the contents of the files to the stream. The only differences are the status line and the filename, which lead to code duplicate. To refactor this, I've simplified the branching into this:
+
+```rust
+fn handle_connection(mut stream: TcpStream) {
+    let buf_reader = BufReader::new(&stream);
+    let request_line = buf_reader.lines().next().unwrap().unwrap();
+
+    let (status_line, filename) = if request_line == "GET / HTTP/1.1" {
+        ("HTTP/1.1 200 OK", "hello.html")
+    } else {
+        ("HTTP/1.1 404 NOT FOUND", "404.html")
+    };
+
+    let contents = fs::read_to_string(filename).unwrap();
+    let length = contents.len();
+
+    let response =
+        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+
+    stream.write_all(response.as_bytes()).unwrap();
+}
+```
+Now the `if` and `else` blocks only return the appropriate values for the status line and filename. After receiving the right status and HTML content related to the situation, the program will assign these two values to status_line and filename using a pattern in the `let` statement and use them to return the correct response to the request. Refactoring this branch also makes it easier to see the difference between the two cases, while also leaving only one place to update the code if we want to change how the file reading and response writing work later.
