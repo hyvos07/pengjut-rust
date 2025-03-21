@@ -225,4 +225,86 @@ let (status_line, filename) = match &request_line[..] {
 
 There is another endpoint added to the request handling, which is the `/sleep` endpoint. This endpoint will make the current thread "sleep" for 10 seconds. This simulates a thread when that thread is busy processing a request. If we opened two browser windows, where we access the endpoint of `/sleep` first and then trying to load the `/` endpoint, we'll see that `/` waits until `/sleep` has slept for its full 5 seconds before loading.
 
-This simulation shows that if another user tries to access our web application during this time, they will be forced to wait because our server only rely on a single thread. When this thread is busy, all other requests cannot be processed and must wait until the current request is completed. To resolve this issue, there are multiple techniques we could use as a preventing action; the one that I’ll implement is a thread pool, which will be explained in the next commit.
+This simulation shows that if another user tries to access our web application during this time, they will be forced to wait because our server only rely on a single thread. When this thread is busy, all other requests cannot be processed and must wait until the current request is completed. To resolve this issue, there are multiple techniques we could use as a preventing action; the one that I’ll implement is a **thread pool**, which will be explained in the next commit.
+
+<br>
+
+## Commit (5) Reflection
+
+To use a thread pool for handling requests with multiple threads, I've implemented its functionality in `lib.rs`.
+
+```rust
+pub struct ThreadPool {
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Job>,
+}
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+impl ThreadPool {
+    pub fn new(size: usize) -> ThreadPool {
+        assert!(size > 0);
+
+        let (sender, receiver) = mpsc::channel();
+        let receiver = Arc::new(Mutex::new(receiver));
+
+        let mut workers = Vec::with_capacity(size);
+
+        for id in 0..size {
+            workers.push(Worker::new(id, Arc::clone(&receiver)));   // spawn new workers
+        }
+
+        ThreadPool { workers, sender }
+    }
+    // --snip--
+}
+```
+A new thread pool is created using the `new()` method, which initializes a set of `Workers` based on the given `size` parameter and push them in a vector. The method also create a new `sender` and `receiver` to facilitate communication between the threads.
+
+The `Worker` instances perform the tasks given by the thread pool through asynchronous channel communication that previously initialized in the `new()` method. At runtime, each worker will continuously loops while waiting for the thread pool to send them a `Job`, executing it upon receiving it, and then returning to the loop to wait for a new job.
+```rust
+struct Worker {
+    id: usize,
+    thread: thread::JoinHandle<()>,
+}
+
+impl Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+        let thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
+
+            println!("Worker {id} got a job; executing.");
+
+            job();
+        });
+
+        Worker { id, thread }
+    }
+}
+```
+
+To send a `Job` to the workers, the program must call the `execute()` method, which will dispatches the job to one of the workers in the vector. There's also a **mutex lock** ensures that only one worker can access the job at a time, allowing it to accept it without worries.
+```rust
+// src/lib.rs
+pub fn execute<F>(&self, f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let job = Box::new(f);
+
+    self.sender.send(job).unwrap();
+}
+
+
+// src/main.rs
+fn main() {
+    // --snip--
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+
+        pool.execute(|| {
+            handle_connection(stream);
+        });
+    }
+}
+```
