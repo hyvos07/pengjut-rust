@@ -308,3 +308,32 @@ fn main() {
     }
 }
 ```
+
+
+<br>
+
+## Commit (Bonus) Reflection
+
+Instead of using the `assert!` macro, I created a new method `build()` that works similarly to the `new()` method but with a slight modification at the start of the process.
+```rust
+pub fn build(size: usize) -> Result<ThreadPool, PoolCreationError> {
+    
+    // Validate the size; it must be greater than 0
+    if size <= 0 {
+        return Err("The size of the thread pool must be greater than 0");
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    let receiver = Arc::new(Mutex::new(receiver));
+
+    let mut workers = Vec::with_capacity(size);
+
+    for id in 0..size {
+        workers.push(Worker::new(id, Arc::clone(&receiver)));
+    }
+
+    Ok(ThreadPool { workers, sender })
+}
+```
+
+The `build()` method provides a better approach by ensuring that an invalid size (zero or negative) is caught early, preventing the creation of an empty or negative-sized thread pool. The return type of this method is `Result`, which also make any error that occurs during the execution of `build()` will cause the `main` function to unwrap the `Result`, leading to a system panic if an error is encountered.
